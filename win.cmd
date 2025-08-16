@@ -1,1 +1,2 @@
-clang main.cpp extrasrc/glad.c -I/SDL3/include -Iinclude -L/SDL3/lib/x64 -lSDL3 -O3 -o build/windows/pio-script.exe && "build/windows/pio-script"
+:: n faço ideia de como usa cmake então uso arquivos .cmd
+clang main.cpp extrasrc/glad.c -Iinclude -Llib -lSDL3 -O3 -o build/windows/pio-script.exe && "build/windows/pio-script"
