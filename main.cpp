@@ -1,12 +1,13 @@
-// pio-script v0.0.0 - Por Arthur K :]
+// pio-script v0.0.0
+// Por Arthur K :]
 
 #include <SDL3/SDL.h>
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL_main.h>
 
 #ifdef __EMSCRIPTEN__
-// Aparentemente o Emscripten suporta usar gl em vez de gles. Não vou ter que escrever o shader duas vezes...
-#include <GL/gl.h>
+// No desktop usa OpenGL 330 core e na web usa OpenGL 300 es, vou ter que escrever o shader duas vezes :(
+#include <GLES3/gl3.h>
 #else
 #include <glad/glad.h>
 #endif
@@ -21,6 +22,8 @@
 #include <vector>
 #include <string>
 using namespace std::string_literals;
+
+#include "runtime.h"
 
 struct AppState {
     SDL_Window* wind;
@@ -49,6 +52,8 @@ struct AppState {
     glm::vec3 camPos = glm::vec3(0, 0, 10);
     // Quaternions são usados pra prevenir gimbal lock e também é o que a Unity usa
     glm::quat camRot = glm::quat(glm::vec3());
+
+    RuntimeData runtime;
 };
 
 // isso daqui é gambiarra
@@ -65,9 +70,15 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 
     // Inicializar janela do computador
 
+#ifdef __EMSCRIPTEN__
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+#else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#endif
     
     as->wind = SDL_CreateWindow("pio-script", 800, 450, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     errif(!as->wind, "SDL3: "s + std::string(SDL_GetError()));
@@ -101,19 +112,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     uint32_t vertShader = glCreateShader(GL_VERTEX_SHADER);
     uint32_t fragShader = glCreateShader(GL_FRAGMENT_SHADER);
 
-    // Pesquisei e sobre os sistemas de sistemas de coordenadas que se usa no render:
-    // O Model Space (vec3) é a posição de objetos individuais dentro de uma hierarquia maior e é convertido para
-    // o World Space (vec3), que se usa de um modo mais global com esses objetos, além de ser convertido para
-    // o View Space (vec3), que é a posição global desses em relação à câmera, e que é colocado no vertex shader para então ser convertido para
-    // o Clip Space (vec4), que é um passo intermediário entre a posição das coisas no mundo virtual 3D e a tela 2D
-    // o Normalized Device Coordinates (NDC) (vec3), que é o mesmo que o Clip Space exceto que fizeram gambiarra, e que finalmente é convertido para
-    // o Screen Space (vec2), que é a posição dos objetos na tela do computador.
-
-    // Quem é que inventou tudo isso hein
-
     {
-        const char* source = R"glsl(
-            #version 330 core
+#ifdef __EMSCRIPTEN__
+        const char* source =
+R"glsl(     #version 300 es
+
+            precision mediump float;
 
             layout (location = 0) in vec3 aPos;
             layout (location = 1) in vec3 aColor;
@@ -127,6 +131,23 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
                 color = aColor;
             }
         )glsl";
+#else
+        const char* source =
+R"glsl(     #version 330 core
+
+            layout (location = 0) in vec3 aPos;
+            layout (location = 1) in vec3 aColor;
+
+            uniform mat4 vp;
+
+            out vec3 color;
+
+            void main() {
+                gl_Position = vp * vec4(aPos, 1);
+                color = aColor;
+            }
+        )glsl";
+#endif
         glShaderSource(vertShader, 1, (const char *const *)&source, NULL);
         glCompileShader(vertShader);
 
@@ -141,8 +162,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     }
 
     {
-        const char* source = R"glsl(
-            #version 330 core
+#ifdef __EMSCRIPTEN__
+        const char* source =
+R"glsl(     #version 300 es
+
+            precision mediump float;
 
             in vec3 color;
             out vec4 fColor;
@@ -151,6 +175,18 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
                 fColor = vec4(color, 1);
             }
         )glsl";
+#else
+        const char* source =
+R"glsl(     #version 330 core
+
+            in vec3 color;
+            out vec4 fColor;
+
+            void main() {
+                fColor = vec4(color, 1);
+            }
+        )glsl";
+#endif
         glShaderSource(fragShader, 1, (const char *const *)&source, NULL);
         glCompileShader(fragShader);
 
@@ -227,8 +263,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     glBindVertexArray(as->vao);
     glBindBuffer(GL_ARRAY_BUFFER, as->vbo);
 
-    // Fazer isso daqui a cada frame não é nem um pouco eficiente, mas vou deixar assim por enquanto...
-    glBufferData(GL_ARRAY_BUFFER, as->vertexes.size() * sizeof(AppState::Vertex), as->vertexes.data(), GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, as->vertexes.size() * sizeof(AppState::Vertex), as->vertexes.data(), GL_STREAM_DRAW);
 
     glDrawArrays(GL_TRIANGLES, 0, as->vertexes.size());
 

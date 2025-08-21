@@ -1,1 +1,1 @@
-emcc main.cpp -s USE_SDL=3 -O3 -o build/web/pio-script.html && (cd build/web & start chrome "127.0.0.1:8000/pio-script.html" & python -m http.server & cd ../..)
+emcc main.cpp -Iinclude -s USE_SDL=3 -s FULL_ES3=1 -s USE_WEBGL2 -O3 -o build/web/pio-script.html && (cd build/web & start chrome "127.0.0.1:8000/pio-script.html" & python -m http.server & cd ../..)
